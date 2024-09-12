@@ -1,29 +1,75 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
+import * as yaml from "js-yaml";
 import * as vscode from "vscode";
+import dayjs = require("dayjs");
 
-// this method is called when your extension is activated
-// your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-  // Use the console to output diagnostic information (console.log) and errors (console.error)
-  // This line of code will only be executed once when your extension is activated
-  console.log('Congratulations, your extension "quickstart" is now active!');
-
-  // The command has been defined in the package.json file
-  // Now provide the implementation of the command with registerCommand
-  // The commandId parameter must match the command field in package.json
   let disposable = vscode.commands.registerCommand(
-    "quickstart.helloWorld",
+    "extension.markdown-yaml-property-updater",
     () => {
-      // The code you place here will be executed every time your command is executed
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage("No active editor found!");
+        return;
+      }
 
-      // Display a message box to the user
-      vscode.window.showInformationMessage("Hello World from Quickstart!");
+      const document = editor.document;
+      if (document.languageId !== "markdown") {
+        vscode.window.showInformationMessage("only works for Markdown files.");
+        return;
+      }
+
+      const text = document.getText();
+      const yamlFrontMatterMatch = text.match(/^---\r\n([\s\S]*?)\r\n---/);
+      if (!yamlFrontMatterMatch) {
+        vscode.window.showInformationMessage("No YAML front matter found.");
+        return;
+      }
+
+      const yamlFrontMatter = yamlFrontMatterMatch[1];
+      let yamlData: any;
+      try {
+        yamlData = yaml.load(yamlFrontMatter);
+      } catch (e) {
+        vscode.window.showErrorMessage("Failed to parse YAML front matter.");
+        return;
+      }
+
+      yamlData.modified = dayjs().format("YYYY-MM-DD HH:mm:ss");
+
+      // the final result in markdown always had a ', had no idea why
+      const updatedYamlFrontMatter = yaml.dump(yamlData, {
+        noRefs: true,
+        quotingType: '"',
+      });
+      const updatedText = text.replace(
+        yamlFrontMatterMatch[0],
+        `---\n${updatedYamlFrontMatter}---`
+      );
+
+      const edit = new vscode.WorkspaceEdit();
+      const fullRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(text.length)
+      );
+      edit.replace(document.uri, fullRange, updatedText);
+
+      return vscode.workspace.applyEdit(edit).then((success) => {
+        if (success) {
+          vscode.window.showInformationMessage(
+            "Updated the modified property in YAML front matter."
+          );
+        } else {
+          vscode.window.showErrorMessage(
+            "Failed to update the modified property."
+          );
+        }
+      });
     }
   );
 
   context.subscriptions.push(disposable);
 }
 
-// this method is called when your extension is deactivated
 export function deactivate() {}
